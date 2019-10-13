@@ -86,90 +86,73 @@ std::vector<std::string> HttpRequest::getRequestContent()
  * s: 备选字符串, 对于非200响应是默认发送消息, 对于200响应是文件路径
  *  , isRenderFile: 是否用文件内容, (enum)en请求类型
  */
-void HttpRequest::CommonResponse(std::string s, bool isRenderFile, enum HTTPCODE hc)
+void HttpRequest::CommonResponse(std::string s, bool isRenderFile, enum HttpRequest::HTTPCODE hc)
 {
-	switch (hc)
-	{
-	case HttpRequest::HTTP200:
-	{
-		send(this->clientSocketID, this->HTTP_CODE200.c_str(), (int)this->HTTP_CODE200.size(), 0);
-		break;
-	}
-	case HttpRequest::HTTP404:
-	{
-		send(this->clientSocketID, this->HTTP_CODE404.c_str(), (int)this->HTTP_CODE404.size(), 0);
-		break;
-	}
-	case HttpRequest::HTTP400:
-	{
-		send(this->clientSocketID, this->HTTP_CODE400.c_str(), (int)this->HTTP_CODE400.size(), 0);
-		break;
-	}
-	case HttpRequest::HTTP500:
-	{
-		send(this->clientSocketID, this->HTTP_CODE500.c_str(), (int)this->HTTP_CODE500.size(), 0);
-		break;
-	}
-	case HttpRequest::HTTP501:
-	{
-		send(this->clientSocketID, this->HTTP_CODE501.c_str(), (int)this->HTTP_CODE501.size(), 0);
-		break;
-	}
-	default:
-		break;
-	}
-	send(this->clientSocketID, this->HTTP_SERVER.c_str(), (int)this->HTTP_SERVER.size(), 0);
-	send(this->clientSocketID, this->HTTP_CHARSET.c_str(), (int)this->HTTP_CHARSET.size(), 0);
-	send(this->clientSocketID, this->HTTP_EMPTR_LINE.c_str(), (int)this->HTTP_EMPTR_LINE.size(), 0);
-	if (isRenderFile)  //使用文件
+	HttpRequest::CONTENT_TYPE ct = HttpRequest::CONTENT_TYPE::HTML;   //默认文件类型是html, 即Content-Type默认值
+
+	if (isRenderFile && hc == HttpRequest::HTTP200)    //文件路径扩展
 	{
 		//找文件类型
-		if (this->isEndWith(s, this->FILETYPE_HTML))  //html
+		if (this->isEndWith(s, this->FILETYPE_HTML))	//html
 		{
 			s = this->HTML_FILE_DIRECTORY + s;
 		}
+		if (this->isEndWith(s, this->FILETYPE_CSS))		//css
+		{
+			s = this->CSS_FILE_DIRECTORY + s;
+			ct = HttpRequest::CONTENT_TYPE::CSS;
+		}
+		if (this->isEndWith(s, this->FILETYPE_JS))		//js
+		{
+			s = this->JS_FILE_DIRECTORY + s;
+			ct = HttpRequest::CONTENT_TYPE::JS;
+		}
 
-		switch (hc)
+		//前逻辑: 如果200但是文件不存在那么改成404
+		if (!IsFileOccur(s.c_str()))
 		{
-		case HttpRequest::HTTP200:
-		{
-			if (!this->SendFileContent(s.c_str()))
-			{
-				if (!this->SendFileContent(FILE_NOTFOUND.c_str()))
-					send(this->clientSocketID, "url file not found", (int)s.size(), 0);
-			}
-			break;
+			s = "NOT FOUNDDDDD";
+			hc = HttpRequest::HTTP404;
 		}
-		case HttpRequest::HTTP404:
+	}
+
+	send(this->clientSocketID, this->HTTP_CODE.at(hc).c_str() , (int)this->HTTP_CODE.at(hc).size(), 0);
+	send(this->clientSocketID, this->HTTP_SERVER.c_str(), (int)this->HTTP_SERVER.size(), 0);
+	send(this->clientSocketID, this->HTTP_CONTENT_TYPE.at(ct).c_str(), (int)this->HTTP_CONTENT_TYPE.at(ct).size(), 0);
+	send(this->clientSocketID, this->HTTP_EMPTR_LINE.c_str(), (int)this->HTTP_EMPTR_LINE.size(), 0);
+	if (isRenderFile)  //使用文件
+	{
+		if (hc == HttpRequest::HTTP200)
 		{
-			if (!this->SendFileContent(FILE_NOTFOUND.c_str()))
+			this->SendFileContent(s.c_str()); //由于前述判断文件存在, 故此处一定可以发送文件
+		}
+		else
+		{
+			if (!this->SendFileContent(this->HTTP_FILEPATH.at(hc).c_str()))
 				send(this->clientSocketID, s.c_str(), (int)s.size(), 0);
-			break;
-		}
-		case HttpRequest::HTTP400:
-		{
-			if (!this->SendFileContent(FILE_BAD_REQUEST.c_str()))
-				send(this->clientSocketID, s.c_str(), (int)s.size(), 0);
-			break;
-		}
-		case HttpRequest::HTTP500:
-		{
-			if (!this->SendFileContent(FILE_INTERNAL_SERVER_ERROR.c_str()))
-				send(this->clientSocketID, s.c_str(), (int)s.size(), 0);
-			break;
-		}
-		case HttpRequest::HTTP501:
-		{
-			if (!this->SendFileContent(FILE_METHOD_NOT_IMPLEMENTED.c_str()))
-				send(this->clientSocketID, s.c_str(), (int)s.size(), 0);
-			break;
-		}
-		default:
-			break;
 		}
 	}
 	else
 		send(this->clientSocketID, s.c_str(), (int)s.size(), 0);
+}
+
+/*
+ * 仅判断文件是否存在
+ * 返回true说明文件存在, false说明文件不存在
+ */
+bool HttpRequest::IsFileOccur(const char * filename)
+{
+	std::filesystem::path filePath = std::filesystem::absolute(filename);
+	std::string windowsTypePath = filePath.string();
+	FILE *resource = NULL;
+	errno_t err;
+	err = fopen_s(&resource, windowsTypePath.c_str(), "r");
+	if (err != 0) return false;
+	else
+	{
+		fclose(resource);
+		return true;
+	}
 }
 
 /*
